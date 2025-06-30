@@ -6,12 +6,10 @@ use std::str::FromStr;
 use crate::models::{AccountInfo, InstructionData};
 
 pub fn parse_pubkey(address_string: &str) -> Result<Pubkey, String> {
-    // First, let's do some basic checks on the address format
     if address_string.len() < 32 || address_string.len() > 44 {
         return Err("The provided address length is not valid for a Solana public key".to_string());
     }
     
-    // Ensure all characters are valid base58 characters (no confusing ones like 0, O, I, l)
     if !address_string.chars().all(|character| character.is_ascii_alphanumeric() && !"0OIl".contains(character)) {
         return Err("The address contains invalid characters for base58 encoding".to_string());
     }
@@ -20,12 +18,10 @@ pub fn parse_pubkey(address_string: &str) -> Result<Pubkey, String> {
 }
 
 pub fn keypair_from_base58(private_key_string: &str) -> Result<Keypair, String> {
-    // Let's validate the secret key format before trying to decode it
     if private_key_string.len() < 80 || private_key_string.len() > 100 {
         return Err("The private key length doesn't match expected base58 encoding standards".to_string());
     }
     
-    // Make sure all characters are proper base58 (excluding confusing characters)
     if !private_key_string.chars().all(|character| character.is_ascii_alphanumeric() && !"0OIl".contains(character)) {
         return Err("The private key contains characters that aren't valid in base58 encoding".to_string());
     }

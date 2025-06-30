@@ -7,7 +7,6 @@ use crate::utils::{instruction_to_response, parse_pubkey};
 pub async fn create_token(
     Json(token_creation_request): Json<CreateTokenRequest>,
 ) -> (StatusCode, ResponseJson<ApiResponse<InstructionData>>) {
-    // First, let's make sure we have a valid mint authority address
     let authority_for_new_mint = match &token_creation_request.mint_authority {
         Some(authority_address) if !authority_address.is_empty() => authority_address,
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("A mint authority address is required to create a new token".to_string()))),
@@ -34,7 +33,6 @@ pub async fn create_token(
         Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
 
-    // Additional validation to prevent using system program ID as mint authority or mint
     if mint_authority_public_key == solana_program::system_program::id() {
         return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The system program cannot be used as a mint authority".to_string())));
     }
@@ -60,7 +58,6 @@ pub async fn create_token(
 pub async fn mint_token(
     Json(token_minting_request): Json<MintTokenRequest>,
 ) -> (StatusCode, ResponseJson<ApiResponse<InstructionData>>) {
-    // Let's validate all the required information for minting tokens
     let target_token_mint = match &token_minting_request.mint {
         Some(mint_address) if !mint_address.is_empty() => mint_address,
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please provide the mint address of the token you want to mint".to_string()))),
@@ -97,7 +94,6 @@ pub async fn mint_token(
         Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
 
-    // Additional validation to prevent using system program ID
     if token_mint_public_key == solana_program::system_program::id() {
         return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The system program cannot be used as a token mint".to_string())));
     }

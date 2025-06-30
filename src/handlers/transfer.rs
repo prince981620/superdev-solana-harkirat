@@ -9,50 +9,42 @@ use crate::utils::{parse_pubkey};
 pub async fn handle_solana_transfer_request(
     Json(transfer_request): Json<SendSolRequest>,
 ) -> (StatusCode, ResponseJson<ApiResponse<SolTransferData>>) {
-    // First, let's check if the sender's wallet address is provided and valid
     let sender_wallet = match &transfer_request.from {
         Some(wallet_address) if !wallet_address.is_empty() => wallet_address,
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please provide a valid sender wallet address".to_string()))),
     };
     
-    // Next, verify the recipient's wallet address is present and not empty
     let recipient_wallet = match &transfer_request.to {
         Some(wallet_address) if !wallet_address.is_empty() => wallet_address,
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please provide a valid recipient wallet address".to_string()))),
     };
     
-    // Now validate the transfer amount - it should be reasonable and positive
     let transfer_amount_in_lamports = match transfer_request.lamports {
         Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Transfer amount needs to be greater than zero".to_string()))),
         Some(amount) if amount > 100_000_000_000_000 => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The transfer amount exceeds the maximum allowed limit".to_string()))),
         Some(amount) => amount,
         None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify the amount you want to transfer".to_string()))),
-    };    // Let's convert the sender's wallet string into a proper Solana public key
+    };
     let sender_public_key = match parse_pubkey(sender_wallet) {
         Ok(parsed_key) => parsed_key,
         Err(validation_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(validation_error))),
     };
         
-    // Similarly, convert the recipient's wallet string into a Solana public key
     let recipient_public_key = match parse_pubkey(recipient_wallet) {
         Ok(parsed_key) => parsed_key,
         Err(validation_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(validation_error))),
     };
 
-    // We need to ensure users don't try to send money to themselves
     if sender_public_key == recipient_public_key {
         return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("You cannot send SOL to your own wallet address".to_string())));
     }
 
-    // Also, we should block any attempts to interact with the system program
     if sender_public_key == solana_program::system_program::id() || recipient_public_key == solana_program::system_program::id() {
         return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Transfers involving the system program are not permitted".to_string())));
     }
 
-    // Now we can create the actual transfer instruction using Solana's system program
     let blockchain_instruction = system_instruction::transfer(&sender_public_key, &recipient_public_key, transfer_amount_in_lamports);
 
-    // Prepare the response data with all the transaction details
     let transfer_response = SolTransferData {
         program_id: blockchain_instruction.program_id.to_string(),
         accounts: blockchain_instruction.accounts.iter().map(|account| account.pubkey.to_string()).collect(),
@@ -65,7 +57,6 @@ pub async fn handle_solana_transfer_request(
 pub async fn handle_token_transfer_between_users(
     Json(token_request): Json<SendTokenRequest>,
 ) -> (StatusCode, ResponseJson<ApiResponse<TokenTransferData>>) {
-    // Let's ensure all the necessary information is provided by the user
     let receiving_user_address = match &token_request.destination {
         Some(address_string) if !address_string.is_empty() => address_string,
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Destination wallet address is required for this operation".to_string()))),
@@ -81,7 +72,6 @@ pub async fn handle_token_transfer_between_users(
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Current token owner address is needed".to_string()))),
     };
     
-    // Check that the transfer amount makes sense
     let token_transfer_amount = match token_request.amount {
         Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Token transfer amount should be more than zero".to_string()))),
         Some(requested_amount) if requested_amount > u64::MAX / 2 => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The requested transfer amount is unreasonably large".to_string()))),
@@ -89,7 +79,6 @@ pub async fn handle_token_transfer_between_users(
         None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify how many tokens to transfer".to_string()))),
     };
 
-    // Now let's parse each address string into proper Solana public keys
     let token_mint_public_key = match parse_pubkey(token_mint_address) {
         Ok(parsed_mint_key) => parsed_mint_key,
         Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
@@ -105,21 +94,17 @@ pub async fn handle_token_transfer_between_users(
         Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
 
-    // We should prevent users from sending tokens to themselves
     if owner_public_key == destination_public_key {
         return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("You cannot send tokens to your own wallet address".to_string())));
     }
 
-    // Block any interactions with the system program for security
     if owner_public_key == solana_program::system_program::id() || destination_public_key == solana_program::system_program::id() {
         return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Token transfers involving the system program are not allowed".to_string())));
     }
 
-    // We need to find the associated token accounts for both the sender and receiver
     let sender_token_account = spl_associated_token_account::get_associated_token_address(&owner_public_key, &token_mint_public_key);
     let receiver_token_account = spl_associated_token_account::get_associated_token_address(&destination_public_key, &token_mint_public_key);
 
-    // Create the token transfer instruction using the SPL token program
     let token_transfer_instruction = match token_instruction::transfer(
         &spl_token::id(),
         &sender_token_account,
@@ -132,7 +117,6 @@ pub async fn handle_token_transfer_between_users(
         Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Unable to create the token transfer instruction".to_string()))),
     };
 
-    // Convert the instruction accounts into our response format
     let account_details = token_transfer_instruction
         .accounts
         .into_iter()
@@ -142,7 +126,6 @@ pub async fn handle_token_transfer_between_users(
         })
         .collect();
 
-    // Build the final response with all the necessary transaction information
     let token_transfer_response = TokenTransferData {
         program_id: token_transfer_instruction.program_id.to_string(),
         accounts: account_details,
