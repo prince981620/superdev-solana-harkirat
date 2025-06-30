@@ -5,98 +5,122 @@ use crate::models::{ApiResponse, CreateTokenRequest, InstructionData, MintTokenR
 use crate::utils::{instruction_to_response, parse_pubkey};
 
 pub async fn create_token(
-    Json(req): Json<CreateTokenRequest>,
+    Json(token_creation_request): Json<CreateTokenRequest>,
 ) -> (StatusCode, ResponseJson<ApiResponse<InstructionData>>) {
-    // Validate required fields
-    let mint_authority = match &req.mint_authority {
-        Some(val) if !val.is_empty() => val,
-        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    // First, let's make sure we have a valid mint authority address
+    let authority_for_new_mint = match &token_creation_request.mint_authority {
+        Some(authority_address) if !authority_address.is_empty() => authority_address,
+        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("A mint authority address is required to create a new token".to_string()))),
     };
     
-    let mint = match &req.mint {
-        Some(val) if !val.is_empty() => val,
-        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    let new_token_mint_address = match &token_creation_request.mint {
+        Some(mint_address) if !mint_address.is_empty() => mint_address,
+        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please provide the address for the new token mint".to_string()))),
     };
     
-    let decimals = match req.decimals {
-        Some(val) => val,
-        None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    let token_decimal_places = match token_creation_request.decimals {
+        Some(decimal_count) if decimal_count <= 9 => decimal_count,
+        Some(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Token decimals must be between 0 and 9 for valid SPL tokens".to_string()))),
+        None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify the number of decimal places for this token".to_string()))),
     };
 
-    let mint_authority_pubkey = match parse_pubkey(mint_authority) {
-        Ok(key) => key,
-        Err(err) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(err))),
+    let mint_authority_public_key = match parse_pubkey(authority_for_new_mint) {
+        Ok(valid_pubkey) => valid_pubkey,
+        Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
     
-    let mint_pubkey = match parse_pubkey(mint) {
-        Ok(key) => key,
-        Err(err) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(err))),
+    let token_mint_public_key = match parse_pubkey(new_token_mint_address) {
+        Ok(valid_pubkey) => valid_pubkey,
+        Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
 
-    let instruction = match token_instruction::initialize_mint(
+    // Additional validation to prevent using system program ID as mint authority or mint
+    if mint_authority_public_key == solana_program::system_program::id() {
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The system program cannot be used as a mint authority".to_string())));
+    }
+    
+    if token_mint_public_key == solana_program::system_program::id() {
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The system program cannot be used as a token mint address".to_string())));
+    }
+
+    let mint_initialization_instruction = match token_instruction::initialize_mint(
         &spl_token::id(),
-        &mint_pubkey,
-        &mint_authority_pubkey,
-        Some(&mint_authority_pubkey),
-        decimals,
+        &token_mint_public_key,
+        &mint_authority_public_key,
+        Some(&mint_authority_public_key),
+        token_decimal_places,
     ) {
-        Ok(inst) => inst,
-        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Failed to create token instruction".to_string()))),
+        Ok(created_instruction) => created_instruction,
+        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Unable to create the token initialization instruction".to_string()))),
     };
 
-    (StatusCode::OK, ResponseJson(ApiResponse::success(instruction_to_response(instruction))))
+    (StatusCode::OK, ResponseJson(ApiResponse::success(instruction_to_response(mint_initialization_instruction))))
 }
 
 pub async fn mint_token(
-    Json(req): Json<MintTokenRequest>,
+    Json(token_minting_request): Json<MintTokenRequest>,
 ) -> (StatusCode, ResponseJson<ApiResponse<InstructionData>>) {
-    // Validate required fields
-    let mint = match &req.mint {
-        Some(val) if !val.is_empty() => val,
-        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    // Let's validate all the required information for minting tokens
+    let target_token_mint = match &token_minting_request.mint {
+        Some(mint_address) if !mint_address.is_empty() => mint_address,
+        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please provide the mint address of the token you want to mint".to_string()))),
     };
     
-    let destination = match &req.destination {
-        Some(val) if !val.is_empty() => val,
-        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    let token_recipient_address = match &token_minting_request.destination {
+        Some(recipient_address) if !recipient_address.is_empty() => recipient_address,
+        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("A destination address is required to receive the minted tokens".to_string()))),
     };
     
-    let authority = match &req.authority {
-        Some(val) if !val.is_empty() => val,
-        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    let minting_authority_address = match &token_minting_request.authority {
+        Some(authority_address) if !authority_address.is_empty() => authority_address,
+        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The minting authority address is required to authorize this operation".to_string()))),
     };
     
-    let amount = match req.amount {
-        Some(val) if val > 0 => val,
-        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Missing required fields".to_string()))),
+    let tokens_to_mint = match token_minting_request.amount {
+        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The number of tokens to mint must be greater than zero".to_string()))),
+        Some(mint_amount) if mint_amount > 0 => mint_amount,
+        _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify how many tokens you want to mint".to_string()))),
     };
 
-    let mint_pubkey = match parse_pubkey(mint) {
-        Ok(key) => key,
-        Err(err) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(err))),
+    let token_mint_public_key = match parse_pubkey(target_token_mint) {
+        Ok(valid_pubkey) => valid_pubkey,
+        Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
     
-    let destination_pubkey = match parse_pubkey(destination) {
-        Ok(key) => key,
-        Err(err) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(err))),
+    let recipient_public_key = match parse_pubkey(token_recipient_address) {
+        Ok(valid_pubkey) => valid_pubkey,
+        Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
     
-    let authority_pubkey = match parse_pubkey(authority) {
-        Ok(key) => key,
-        Err(err) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(err))),
+    let minting_authority_public_key = match parse_pubkey(minting_authority_address) {
+        Ok(valid_pubkey) => valid_pubkey,
+        Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
 
-    let instruction = match token_instruction::mint_to(
+    // Additional validation to prevent using system program ID
+    if token_mint_public_key == solana_program::system_program::id() {
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The system program cannot be used as a token mint".to_string())));
+    }
+    
+    if recipient_public_key == solana_program::system_program::id() {
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Tokens cannot be minted directly to the system program".to_string())));
+    }
+    
+    if minting_authority_public_key == solana_program::system_program::id() {
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The system program cannot serve as a minting authority".to_string())));
+    }
+
+    let token_minting_instruction = match token_instruction::mint_to(
         &spl_token::id(),
-        &mint_pubkey,
-        &destination_pubkey,
-        &authority_pubkey,
+        &token_mint_public_key,
+        &recipient_public_key,
+        &minting_authority_public_key,
         &[],
-        amount,
+        tokens_to_mint,
     ) {
-        Ok(inst) => inst,
-        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Failed to create mint instruction".to_string()))),
+        Ok(created_instruction) => created_instruction,
+        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Unable to create the token minting instruction".to_string()))),
     };
 
-    (StatusCode::OK, ResponseJson(ApiResponse::success(instruction_to_response(instruction))))
-} 
+    (StatusCode::OK, ResponseJson(ApiResponse::success(instruction_to_response(token_minting_instruction))))
+}

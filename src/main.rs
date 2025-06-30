@@ -15,8 +15,8 @@ async fn main() {
         .route("/token/mint", post(mint_token))
         .route("/message/sign", post(sign_message))
         .route("/message/verify", post(verify_message))
-        .route("/send/sol", post(send_sol))
-        .route("/send/token", post(send_token))
+        .route("/send/sol", post(handle_solana_transfer_request))
+        .route("/send/token", post(handle_token_transfer_between_users))
         .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8084")
