@@ -1,4 +1,3 @@
-use base64::{Engine as _, engine::general_purpose};
 use solana_program::{instruction::Instruction, pubkey::Pubkey};
 use solana_sdk::signature::Keypair;
 use std::str::FromStr;
@@ -51,6 +50,6 @@ pub fn instruction_to_response(blockchain_instruction: Instruction) -> Instructi
     InstructionData {
         program_id: blockchain_instruction.program_id.to_string(),
         accounts: account_information,
-        instruction_data: general_purpose::STANDARD.encode(&blockchain_instruction.data),
+        instruction_data: bs58::encode(&blockchain_instruction.data).into_string(),
     }
 } 

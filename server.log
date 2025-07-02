@@ -1,0 +1,4 @@
+   Compiling superdev-rust-assignment v0.1.0 (/Users/prince/Project/superdev-solana-harkirat)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.98s
+     Running `target/debug/superdev-rust-assignment`
+Solana HTTP Server running on http://0.0.0.0:8084

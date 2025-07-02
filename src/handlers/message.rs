@@ -1,5 +1,4 @@
 use axum::{extract::Json, http::StatusCode, response::Json as ResponseJson};
-use base64::{Engine as _, engine::general_purpose};
 use solana_sdk::signature::{Signature, Signer};
 
 use crate::models::{
@@ -31,8 +30,8 @@ pub async fn sign_message(
     let digital_signature = wallet_keypair.sign_message(message_as_bytes);
 
     (StatusCode::OK, ResponseJson(ApiResponse::success(SignMessageData {
-        signature: general_purpose::STANDARD.encode(&digital_signature.as_ref()),
-        public_key: wallet_keypair.pubkey().to_string(),
+        signature: bs58::encode(&digital_signature.as_ref()).into_string(),
+        pubkey: wallet_keypair.pubkey().to_string(),
         message: user_message.clone(),
     })))
 }
@@ -62,9 +61,9 @@ pub async fn verify_message(
         Err(parsing_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(parsing_error))),
     };
 
-    let signature_bytes = match general_purpose::STANDARD.decode(provided_signature) {
+    let signature_bytes = match bs58::decode(provided_signature).into_vec() {
         Ok(decoded_bytes) => decoded_bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The provided signature is not in valid base64 format".to_string()))),
+        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The provided signature is not in valid base58 format".to_string()))),
     };
 
     let digital_signature = match Signature::try_from(signature_bytes.as_slice()) {

@@ -36,7 +36,7 @@ pub struct KeypairData {
 #[derive(Serialize)]
 pub struct SignMessageData {
     pub signature: String,
-    pub public_key: String,
+    pub pubkey: String,
     pub message: String,
 }
 

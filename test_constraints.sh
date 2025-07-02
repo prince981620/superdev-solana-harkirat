@@ -7,7 +7,7 @@ echo "=========================================="
 
 # Start the server in background
 echo "Starting server..."
-cargo run &
+cargo run --bin superdev-rust-assignment &
 SERVER_PID=$!
 
 # Wait for server to start

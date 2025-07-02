@@ -1,0 +1,28 @@
+{
+  "name": "superdev-solana-harkirat",
+  "version": "1.0.0",
+  "description": "This Rust HTTP server implements all the required Solana-related endpoints as specified in the assignment.",
+  "main": "test_debug.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prince981620/superdev-solana-harkirat.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/prince981620/superdev-solana-harkirat/issues"
+  },
+  "homepage": "https://github.com/prince981620/superdev-solana-harkirat#readme",
+  "dependencies": {
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.2",
+    "axios": "^1.10.0",
+    "bs58": "^6.0.0",
+    "tweetnacl": "^1.0.3"
+  }
+}

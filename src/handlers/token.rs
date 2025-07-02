@@ -19,7 +19,7 @@ pub async fn create_token(
     
     let token_decimal_places = match token_creation_request.decimals {
         Some(decimal_count) if decimal_count <= 9 => decimal_count,
-        Some(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Token decimals must be between 0 and 9 for valid SPL tokens".to_string()))),
+        Some(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Decimals must be between 0 and 9".to_string()))),
         None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify the number of decimal places for this token".to_string()))),
     };
 
@@ -74,7 +74,7 @@ pub async fn mint_token(
     };
     
     let tokens_to_mint = match token_minting_request.amount {
-        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The number of tokens to mint must be greater than zero".to_string()))),
+        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Amount must be greater than 0".to_string()))),
         Some(mint_amount) if mint_amount > 0 => mint_amount,
         _ => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify how many tokens you want to mint".to_string()))),
     };

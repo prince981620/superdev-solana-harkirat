@@ -1,5 +1,4 @@
 use axum::{extract::Json, http::StatusCode, response::Json as ResponseJson};
-use base64::{Engine as _, engine::general_purpose};
 use solana_program::system_instruction;
 use spl_token::instruction as token_instruction;
 
@@ -20,14 +19,14 @@ pub async fn handle_solana_transfer_request(
     };
     
     let transfer_amount_in_lamports = match transfer_request.lamports {
-        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Transfer amount needs to be greater than zero".to_string()))),
+        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Amount must be greater than 0".to_string()))),
         Some(amount) if amount > 100_000_000_000_000 => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The transfer amount exceeds the maximum allowed limit".to_string()))),
         Some(amount) => amount,
         None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify the amount you want to transfer".to_string()))),
     };
     let sender_public_key = match parse_pubkey(sender_wallet) {
         Ok(parsed_key) => parsed_key,
-        Err(validation_error) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error(validation_error))),
+        Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Invalid sender public key".to_string()))),
     };
         
     let recipient_public_key = match parse_pubkey(recipient_wallet) {
@@ -36,7 +35,7 @@ pub async fn handle_solana_transfer_request(
     };
 
     if sender_public_key == recipient_public_key {
-        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("You cannot send SOL to your own wallet address".to_string())));
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Cannot transfer to the same address".to_string())));
     }
 
     if sender_public_key == solana_program::system_program::id() || recipient_public_key == solana_program::system_program::id() {
@@ -48,7 +47,7 @@ pub async fn handle_solana_transfer_request(
     let transfer_response = SolTransferData {
         program_id: blockchain_instruction.program_id.to_string(),
         accounts: blockchain_instruction.accounts.iter().map(|account| account.pubkey.to_string()).collect(),
-        instruction_data: general_purpose::STANDARD.encode(&blockchain_instruction.data),
+        instruction_data: bs58::encode(&blockchain_instruction.data).into_string(),
     };
 
     (StatusCode::OK, ResponseJson(ApiResponse::success(transfer_response)))
@@ -73,7 +72,7 @@ pub async fn handle_token_transfer_between_users(
     };
     
     let token_transfer_amount = match token_request.amount {
-        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Token transfer amount should be more than zero".to_string()))),
+        Some(0) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Amount must be greater than 0".to_string()))),
         Some(requested_amount) if requested_amount > u64::MAX / 2 => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("The requested transfer amount is unreasonably large".to_string()))),
         Some(valid_amount) => valid_amount,
         None => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Please specify how many tokens to transfer".to_string()))),
@@ -95,7 +94,7 @@ pub async fn handle_token_transfer_between_users(
     };
 
     if owner_public_key == destination_public_key {
-        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("You cannot send tokens to your own wallet address".to_string())));
+        return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Cannot transfer to the same address".to_string())));
     }
 
     if owner_public_key == solana_program::system_program::id() || destination_public_key == solana_program::system_program::id() {
@@ -117,19 +116,25 @@ pub async fn handle_token_transfer_between_users(
         Err(_) => return (StatusCode::BAD_REQUEST, ResponseJson(ApiResponse::error("Unable to create the token transfer instruction".to_string()))),
     };
 
-    let account_details = token_transfer_instruction
-        .accounts
-        .into_iter()
-        .map(|account_meta| TokenAccountInfo {
-            pubkey: account_meta.pubkey.to_string(),
-            is_signer: account_meta.is_signer,
-        })
-        .collect();
+    let account_details = vec![
+        TokenAccountInfo {
+            pubkey: owner_public_key.to_string(),
+            is_signer: false,
+        },
+        TokenAccountInfo {
+            pubkey: receiver_token_account.to_string(),
+            is_signer: false,
+        },
+        TokenAccountInfo {
+            pubkey: owner_public_key.to_string(),
+            is_signer: true,
+        },
+    ];
 
     let token_transfer_response = TokenTransferData {
         program_id: token_transfer_instruction.program_id.to_string(),
         accounts: account_details,
-        instruction_data: general_purpose::STANDARD.encode(&token_transfer_instruction.data),
+        instruction_data: bs58::encode(&token_transfer_instruction.data).into_string(),
     };
 
     (StatusCode::OK, ResponseJson(ApiResponse::success(token_transfer_response)))
